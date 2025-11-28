@@ -7,9 +7,8 @@ const DwvViewer = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
-  
-  // dwv may not have complete TypeScript definitions, so we use any for the app instance
-  const dwvApp = useRef<any | null>(null);
+
+  const dwvApp = useRef<dwv.App | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -39,7 +38,7 @@ const DwvViewer = () => {
       setError(null);
     };
 
-    const handleLoadProgress = (event: any) => {
+    const handleLoadProgress = (event: dwv.LoadProgressEvent) => {
       setLoadProgress(event.loaded);
     };
 
@@ -50,7 +49,7 @@ const DwvViewer = () => {
       app.render();
     };
 
-    const handleError = (event: any) => {
+    const handleError = (event: dwv.ErrorEvent) => {
       setLoading(false);
       setError(event.error?.message || 'An error occurred while loading DICOM');
       console.error('Error loading DICOM:', event);
@@ -62,12 +61,13 @@ const DwvViewer = () => {
     app.addEventListener('error', handleError);
 
     // load DICOM file
+    const sampleUrl = 'https://raw.githubusercontent.com/ivmartel/dwv/master/tests/data/bbmri-53323851.dcm';
     try {
-      const sampleUrl = 'https://raw.githubusercontent.com/ivmartel/dwv/master/tests/data/bbmri-53323851.dcm';
       app.loadURLs([sampleUrl]);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Load URLs error:', err);
-      setError(err.message);
+      const message = err instanceof Error ? err.message : 'An error occurred while loading DICOM';
+      queueMicrotask(() => handleError({ type: 'error', error: { message } }));
     }
 
     // cleanup
@@ -129,4 +129,3 @@ const DwvViewer = () => {
 };
 
 export default DwvViewer;
-
