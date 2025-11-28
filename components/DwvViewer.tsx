@@ -15,7 +15,6 @@ const DwvViewer = () => {
   useEffect(() => {
     // initialize app
     const app = new dwv.App();
-    console.log('dwv exports:', Object.keys(dwv));
     dwvApp.current = app;
 
     // config options
