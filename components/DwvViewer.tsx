@@ -1,58 +1,100 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as dwv from 'dwv';
 
+const TOOL_GROUPS = {
+  Navigation: [
+    { id: 'WindowLevel', label: 'W/L' },
+    { id: 'ZoomAndPan', label: 'Zoom/Pan' },
+    { id: 'Scroll', label: 'Scroll' }
+  ],
+  Draw: [
+    { id: 'Ruler', label: 'Ruler' },
+    { id: 'Protractor', label: 'Angle' },
+    { id: 'Ellipse', label: 'Ellipse' },
+    { id: 'Rectangle', label: 'Rectangle' },
+    { id: 'FreeHand', label: 'Freehand' },
+    { id: 'Roi', label: 'ROI' },
+    { id: 'Arrow', label: 'Arrow' }
+  ],
+  Filters: [
+    { id: 'Threshold', label: 'Threshold' },
+    { id: 'Sharpen', label: 'Sharpen' },
+    { id: 'Smoothing', label: 'Smooth' },
+    { id: 'Invert', label: 'Invert' },
+    { id: 'HistogramEqualization', label: 'Histogram' }
+  ]
+};
+
 const DwvViewer = () => {
+  const [currentTool, setCurrentTool] = useState('WindowLevel');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const dwvApp = useRef<dwv.App | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // initialize app
     const app = new dwv.App();
     dwvApp.current = app;
 
-    // config options
     const options = {
       tools: {
-        'Scroll': {},
-        'ZoomAndPan': {},
-        'WindowLevel': {}
+        Scroll: {},
+        ZoomAndPan: {},
+        WindowLevel: {},
+        Draw: {
+          shape: [
+            'Ruler',
+            'Protractor',
+            'Ellipse',
+            'Rectangle',
+            'FreeHand',
+            'Roi',
+            'Arrow'
+          ]
+        },
+        Filter: {
+          filter: [
+            'Threshold',
+            'Sharpen',
+            'Smoothing',
+            'HistogramEqualization',
+            'Invert'
+          ]
+        }
       },
-      dataViewConfigs: { '*': [{ divId: 'dwv-container' }] }
+      dataViewConfigs: {
+        '*': [{
+          divId: 'dwv-image',
+          layers: ['image', 'draw', 'info'],
+          orientationMarkers: true,
+          scaleBar: true
+        }]
+      }
     };
 
-    // initialize
     app.init(options);
-    
-    // set WindowLevel as default tool
     app.setTool('WindowLevel');
 
-    // event listeners
     const handleLoadStart = () => {
       setLoading(true);
       setError(null);
     };
 
-    const handleLoadProgress = (event: dwv.LoadProgressEvent) => {
-      setLoadProgress(event.loaded);
+    const handleLoadProgress = (e: dwv.LoadProgressEvent) => {
+      setLoadProgress(e.loaded);
     };
 
     const handleLoadEnd = () => {
       setLoading(false);
-      console.log('Load complete');
-      // Ensure the view is updated/rendered
       app.render();
     };
 
-    const handleError = (event: dwv.ErrorEvent) => {
+    const handleError = (e: dwv.ErrorEvent) => {
       setLoading(false);
-      setError(event.error?.message || 'An error occurred while loading DICOM');
-      console.error('Error loading DICOM:', event);
+      setError(e.error?.message || 'Failed to load DICOM');
     };
 
     app.addEventListener('load-start', handleLoadStart);
@@ -60,69 +102,116 @@ const DwvViewer = () => {
     app.addEventListener('load-end', handleLoadEnd);
     app.addEventListener('error', handleError);
 
-    // load DICOM file
-    const sampleUrl = 'https://raw.githubusercontent.com/ivmartel/dwv/master/tests/data/bbmri-53323851.dcm';
-    try {
-      app.loadURLs([sampleUrl]);
-    } catch (err) {
-      console.error('Load URLs error:', err);
-      const message = err instanceof Error ? err.message : 'An error occurred while loading DICOM';
-      queueMicrotask(() => handleError({ type: 'error', error: { message } }));
-    }
+    const url = 'https://raw.githubusercontent.com/ivmartel/dwv/master/tests/data/bbmri-53323851.dcm';
+    app.loadURLs([url]);
 
-    // cleanup
     return () => {
-      if (dwvApp.current) {
-        dwvApp.current.removeEventListener('load-start', handleLoadStart);
-        dwvApp.current.removeEventListener('load-progress', handleLoadProgress);
-        dwvApp.current.removeEventListener('load-end', handleLoadEnd);
-        dwvApp.current.removeEventListener('error', handleError);
-        // dwv doesn't strictly have a destroy method in all versions, but we clear the ref
-        dwvApp.current = null;
-      }
+      app.removeEventListener('load-start', handleLoadStart);
+      app.removeEventListener('load-progress', handleLoadProgress);
+      app.removeEventListener('load-end', handleLoadEnd);
+      app.removeEventListener('error', handleError);
+      dwvApp.current = null;
     };
   }, []);
 
+  const activateTool = (tool: string) => {
+    if (!dwvApp.current) return;
+    try {
+      dwvApp.current.setTool(tool);
+      setCurrentTool(tool);
+    } catch (err) {
+      console.warn('Tool error:', err);
+    }
+  };
+
+  const handleUndo = () => dwvApp.current?.undo?.();
+  const handleRedo = () => dwvApp.current?.redo?.();
+  const handleReset = () => dwvApp.current?.reset?.();
+
+  const handleLoadExample = () => {
+    if (dwvApp.current) {
+      const url = 'https://raw.githubusercontent.com/ivmartel/dwv/master/tests/data/bbmri-53323851.dcm';
+      dwvApp.current.loadURLs([url]);
+    }
+  };
+
   return (
-    <div ref={containerRef} className="w-full min-h-screen flex flex-col items-center justify-center bg-gray-900 p-4">
-      <div className="w-full max-w-4xl mb-4 bg-gray-800 p-4 rounded-lg shadow-md text-white">
-        <h2 className="text-xl font-bold mb-2">DICOM Web Viewer</h2>
-        <div className="flex gap-4 text-sm">
-          <p>Current Tool: <span className="font-mono bg-gray-700 px-2 py-1 rounded">WindowLevel</span></p>
-          <p className="text-gray-400">Drag on image to adjust brightness/contrast</p>
+    <div className="w-full min-h-screen bg-gray-900 text-white p-4">
+      <div className="max-w-6xl mx-auto">
+
+        <h2 className="text-2xl font-bold mb-4">DWV Viewer (Full Toolbar)</h2>
+
+        <div className="bg-gray-800 p-3 rounded-lg shadow-lg mb-4 flex flex-wrap gap-6">
+
+          <div className="flex gap-3 items-center">
+            <span className="font-semibold text-gray-300">Tools:</span>
+            {TOOL_GROUPS.Navigation.map(t => (
+              <button
+                key={t.id}
+                onClick={() => activateTool(t.id)}
+                className={`px-3 py-1 rounded ${currentTool === t.id ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-3 items-center">
+            <span className="font-semibold text-gray-300">Draw:</span>
+            {TOOL_GROUPS.Draw.map(t => (
+              <button
+                key={t.id}
+                onClick={() => activateTool('Draw:' + t.id)}
+                className={`px-3 py-1 rounded ${currentTool === 'Draw:' + t.id ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-3 items-center">
+            <span className="font-semibold text-gray-300">Filters:</span>
+            {TOOL_GROUPS.Filters.map(t => (
+              <button
+                key={t.id}
+                onClick={() => activateTool('Filter:' + t.id)}
+                className="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600"
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-3 items-center ml-auto">
+            <button onClick={handleLoadExample} className="px-3 py-1 bg-green-600 hover:bg-green-500 rounded">Load Example</button>
+            <button onClick={handleUndo} className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded">Undo</button>
+            <button onClick={handleRedo} className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded">Redo</button>
+            <button onClick={handleReset} className="px-3 py-1 bg-red-600 hover:bg-red-500 rounded">Reset</button>
+          </div>
+
         </div>
-      </div>
 
-      <div className="relative w-full max-w-4xl h-[600px] bg-black border border-gray-700 rounded-lg overflow-hidden shadow-xl">
-        {/* Loading Overlay */}
-        {loading && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/80 text-white">
-            <div className="mb-2">Loading DICOM...</div>
-            <div className="w-64 h-2 bg-gray-700 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-blue-500 transition-all duration-300"
-                style={{ width: `${loadProgress}%` }}
-              />
+        <div className="relative bg-black rounded-lg overflow-hidden border border-gray-700 h-[700px]">
+
+          {loading && (
+            <div className="absolute inset-0 bg-black/70 flex flex-col justify-center items-center z-10">
+              <p>Loading DICOM…</p>
+              <div className="w-64 bg-gray-700 h-2 rounded mt-3">
+                <div className="h-full bg-blue-500" style={{ width: `${loadProgress}%` }} />
+              </div>
             </div>
-            <div className="mt-2 text-sm text-gray-400">{loadProgress}%</div>
-          </div>
-        )}
+          )}
 
-        {/* Error Overlay */}
-        {error && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/90 text-red-500 p-4 text-center">
-            <div>
-              <p className="text-lg font-bold mb-2">Error</p>
-              <p>{error}</p>
+          {error && (
+            <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-10 text-red-400 p-6 text-center">
+              {error}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* DWV Container */}
-        <div 
-          id="dwv-container" 
-          className="w-full h-full"
-        />
+          <div id="dwv-image" className="w-full h-full"></div>
+
+        </div>
+
       </div>
     </div>
   );
